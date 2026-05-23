@@ -1,0 +1,25 @@
+(defpackage #:cliam
+  (:use #:cl)
+  (:export
+   ;; email
+   #:email #:make-email #:email-p
+   #:email-from #:email-to #:email-cc #:email-bcc #:email-reply-to
+   #:email-subject #:email-text-body #:email-html-body
+   #:email-headers #:email-attachments #:email-assigns
+   ;; builders (return fresh email)
+   #:from #:to #:cc #:bcc #:reply-to
+   #:subject #:text-body #:html-body
+   #:header #:attach
+   #:assign #:get-assign
+   ;; rendering
+   #:render-rfc822
+   ;; adapter protocol + delivery
+   #:deliver #:deliver-with
+   #:*default-adapter*
+   #:deliver-error
+   ;; test adapter
+   #:test-adapter #:make-test-adapter
+   #:test-inbox #:clear-inbox
+   ;; local adapter
+   #:local-adapter #:make-local-adapter
+   #:local-adapter-directory))
