@@ -77,12 +77,33 @@
                                    unless (string-equal k name)
                                      append (list k v)))))
 
-(defun attach (email pathname &key filename content-type)
-  "Add an attachment (pathname-based). FILENAME defaults to the file's name."
-  (let ((att (list :pathname pathname
-                   :filename (or filename
-                                 (and pathname (file-namestring pathname)))
-                   :content-type content-type)))
+(defun attach (email source &key filename content-type)
+  "Add an attachment. SOURCE is one of:
+  - a pathname (or pathname-string) — file is read at render time
+  - an octet vector — used as-is, e.g. for in-memory PDFs
+
+FILENAME defaults to the file's basename for pathname sources and is
+required for octet sources. CONTENT-TYPE defaults to a trivial-mimes
+lookup on the filename (or application/octet-stream)."
+  (let ((att (cond
+               ((pathnamep source)
+                (list :pathname source
+                      :filename (or filename (file-namestring source))
+                      :content-type content-type))
+               ((stringp source)
+                (let ((p (pathname source)))
+                  (list :pathname p
+                        :filename (or filename (file-namestring p))
+                        :content-type content-type)))
+               ((and (vectorp source)
+                     (subtypep (array-element-type source) '(unsigned-byte 8)))
+                (unless filename
+                  (error "ATTACH: :filename is required when SOURCE is an octet vector."))
+                (list :octets source
+                      :filename filename
+                      :content-type content-type))
+               (t (error "ATTACH: SOURCE must be a pathname, pathname-string, or octet vector; got ~s"
+                         source)))))
     (copy-with email :attachments (append (email-attachments email) (list att)))))
 
 (defun assign (email key value)
@@ -92,6 +113,47 @@
 
 (defun get-assign (email key &optional default)
   (getf (email-assigns email) key default))
+
+;;; --- one-shot constructor -------------------------------------------------
+
+(defun %ensure-addr-list (x)
+  "Accept either a single address (string / (name . addr) cons) or a
+list of them, and always return a list."
+  (cond
+    ((null x) nil)
+    ;; bare cons of two strings = single (name . addr)
+    ((and (consp x) (atom (cdr x)) (stringp (car x)) (stringp (cdr x))) (list x))
+    ((listp x) x)
+    (t (list x))))
+
+(defun %apply-addr-builder (builder email addr)
+  (etypecase addr
+    (string (funcall builder email addr))
+    (cons   (funcall builder email (cdr addr) (car addr)))))
+
+(defun build-email (&key from to cc bcc reply-to subject text-body html-body
+                         headers attachments assigns)
+  "One-call email constructor. TO / CC / BCC accept a single address
+(string or (name . addr) cons) or a list of either. Equivalent to
+chaining individual builders; returns an email suitable for further
+mutation via the regular updaters."
+  (let ((e (make-email)))
+    (when from     (setf e (%apply-addr-builder #'from     e from)))
+    (when reply-to (setf e (%apply-addr-builder #'reply-to e reply-to)))
+    (dolist (a (%ensure-addr-list to))  (setf e (%apply-addr-builder #'to  e a)))
+    (dolist (a (%ensure-addr-list cc))  (setf e (%apply-addr-builder #'cc  e a)))
+    (dolist (a (%ensure-addr-list bcc)) (setf e (%apply-addr-builder #'bcc e a)))
+    (when subject   (setf e (subject   e subject)))
+    (when text-body (setf e (text-body e text-body)))
+    (when html-body (setf e (html-body e html-body)))
+    (loop for (k v) on headers by #'cddr do (setf e (header e k v)))
+    (dolist (att attachments)
+      (let ((source (or (getf att :pathname) (getf att :octets))))
+        (setf e (attach e source
+                        :filename     (getf att :filename)
+                        :content-type (getf att :content-type)))))
+    (loop for (k v) on assigns by #'cddr do (setf e (assign e k v)))
+    e))
 
 ;;; --- RFC 5322 rendering ---------------------------------------------------
 
@@ -231,10 +293,10 @@ single space."
       "application/octet-stream"))
 
 (defun %write-attachment (att out boundary)
-  (let* ((path  (getf att :pathname))
-         (fname (or (getf att :filename) "attachment"))
+  (let* ((fname (or (getf att :filename) "attachment"))
          (ct    (%attachment-content-type att))
-         (bytes (%read-file-octets path))
+         (bytes (or (getf att :octets)
+                    (%read-file-octets (getf att :pathname))))
          (b64   (cl-base64:usb8-array-to-base64-string bytes)))
     (format out "--~a~%" boundary)
     (format out "Content-Type: ~a; name=\"~a\"~%" ct fname)

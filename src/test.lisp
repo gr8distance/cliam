@@ -17,3 +17,11 @@
 (defun clear-inbox (adapter)
   "Reset the captured inbox. Call from your test setup."
   (setf (test-inbox adapter) nil))
+
+(defmacro with-fresh-inbox ((adapter-var) &body body)
+  "Bind ADAPTER-VAR to a fresh test-adapter, point *default-adapter* at
+it, and run BODY. Guarantees test isolation — useful as a per-test
+fixture without coupling to any particular test framework."
+  `(let* ((,adapter-var (make-test-adapter))
+          (*default-adapter* ,adapter-var))
+     ,@body))

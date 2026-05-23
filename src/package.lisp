@@ -11,6 +11,7 @@
    #:subject #:text-body #:html-body
    #:header #:attach
    #:assign #:get-assign
+   #:build-email
    ;; rendering
    #:render-rfc822
    ;; adapter protocol + delivery
@@ -20,7 +21,7 @@
    #:deliver-error
    ;; test adapter
    #:test-adapter #:make-test-adapter
-   #:test-inbox #:clear-inbox
+   #:test-inbox #:clear-inbox #:with-fresh-inbox
    ;; test assertions (framework-agnostic)
    #:email-matches-p #:find-email
    #:assert-email-sent #:assert-no-emails-sent #:assert-email-count

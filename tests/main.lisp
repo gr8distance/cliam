@@ -270,6 +270,53 @@
     (is (search "Content-Type: image/png; name=\"logo.png\"" (render-rfc822 e)))
     (uiop:delete-file-if-exists path)))
 
+(test attach-accepts-octet-vector
+  (let* ((bytes (map '(simple-array (unsigned-byte 8) (*)) #'char-code "inline content"))
+         (e (attach (make-email) bytes :filename "report.pdf"
+                                       :content-type "application/pdf"))
+         (s (render-rfc822 e)))
+    (is (search "Content-Disposition: attachment; filename=\"report.pdf\"" s))
+    (is (search "application/pdf" s))
+    ;; "inline content" -> base64 "aW5saW5lIGNvbnRlbnQ="
+    (is (search "aW5saW5lIGNvbnRlbnQ=" s))))
+
+(test attach-octets-requires-filename
+  (signals error (attach (make-email) #(0 1 2))))
+
+(test attach-rejects-non-source
+  (signals error (attach (make-email) 42 :filename "n.bin")))
+
+(test build-email-fills-all-slots
+  (let ((e (build-email :from "noreply@x.com"
+                        :to (list "alice@x.com" '("Bob" . "bob@x.com"))
+                        :cc '("Carol" . "carol@x.com")
+                        :subject "hi"
+                        :text-body "body"
+                        :headers '("x-tag" "promo")
+                        :assigns '(:campaign "spring"))))
+    (is (equal "noreply@x.com" (email-from e)))
+    (is (= 2 (length (email-to e))))
+    (is (equal '("Bob" . "bob@x.com") (second (email-to e))))
+    (is (equal '("Carol" . "carol@x.com") (first (email-cc e))))
+    (is (equal "hi" (email-subject e)))
+    (is (equal "body" (email-text-body e)))
+    (is (equal "promo" (getf (email-headers e) "x-tag")))
+    (is (equal "spring" (get-assign e :campaign)))))
+
+(test build-email-recipient-shortcuts
+  ;; single string
+  (is (equal "x@y" (first (email-to (build-email :to "x@y")))))
+  ;; single cons
+  (is (equal '("Alice" . "a@x") (first (email-to (build-email :to '("Alice" . "a@x")))))))
+
+(test with-fresh-inbox-isolates-deliveries
+  (with-fresh-inbox (a1)
+    (deliver (build-email :from "a@x.com" :to "b@x.com" :subject "first"))
+    (is (= 1 (length (test-inbox a1)))))
+  (with-fresh-inbox (a2)
+    ;; fresh adapter — previous inbox is gone
+    (is (= 0 (length (test-inbox a2))))))
+
 (test attachment-content-type-fallback-to-octet-stream
   (let* ((path (temp-file-with-bytes #(0 1 2)))
          (e (attach (make-email) path :filename "weirdfile.unknownext")))
