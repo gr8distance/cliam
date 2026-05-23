@@ -385,11 +385,38 @@
     (let* ((delivered (deliver-with adapter e))
            (path (get-assign delivered :delivered-path)))
       (is (probe-file path))
-      (let ((contents (with-open-file (s path :external-format :utf-8)
-                        (with-output-to-string (out)
-                          (loop for line = (read-line s nil nil)
-                                while line do (format out "~a~%" line))))))
+      (let ((contents (read-mailbox-entry path)))
         (is (search "Subject: smoke" contents))
         (is (search "hello there" contents)))
-      (uiop:delete-file-if-exists path)
+      (clear-mailbox adapter)
       (uiop:delete-empty-directory dir))))
+
+(test local-mailbox-list-and-clear
+  (let* ((dir (temp-dir))
+         (adapter (make-local-adapter dir)))
+    (deliver-with adapter (build-email :from "a@x.com" :to "b@x.com" :subject "one"))
+    (deliver-with adapter (build-email :from "a@x.com" :to "b@x.com" :subject "two"))
+    (deliver-with adapter (build-email :from "a@x.com" :to "b@x.com" :subject "three"))
+    (is (= 3 (length (list-mailbox adapter))))
+    (is (= 3 (clear-mailbox adapter)))
+    (is (null (list-mailbox adapter)))
+    (uiop:delete-empty-directory dir)))
+
+(test local-mailbox-pop-fifo
+  (let* ((dir (temp-dir))
+         (adapter (make-local-adapter dir)))
+    (deliver-with adapter (build-email :from "a@x.com" :to "b@x.com" :subject "older"))
+    ;; gap so filename timestamp / counter doesn't collide
+    (sleep 1)
+    (deliver-with adapter (build-email :from "a@x.com" :to "b@x.com" :subject "newer"))
+    (let ((first (pop-mailbox adapter)))
+      (is (search "Subject: older" first)))
+    (is (= 1 (length (list-mailbox adapter))))
+    (clear-mailbox adapter)
+    (uiop:delete-empty-directory dir)))
+
+(test pop-mailbox-on-empty-returns-nil
+  (let* ((dir (temp-dir))
+         (adapter (make-local-adapter dir)))
+    (is (null (pop-mailbox adapter)))
+    (uiop:delete-empty-directory dir)))

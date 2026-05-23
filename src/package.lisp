@@ -28,6 +28,8 @@
    ;; local adapter
    #:local-adapter #:make-local-adapter
    #:local-adapter-directory
+   #:list-mailbox #:read-mailbox-entry #:delete-mailbox-entry
+   #:clear-mailbox #:pop-mailbox
    ;; smtp adapter (opt-in via :cliam/smtp)
    #:smtp-adapter #:make-smtp-adapter
    #:smtp-adapter-host #:smtp-adapter-port #:smtp-adapter-ssl
