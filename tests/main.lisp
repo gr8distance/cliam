@@ -109,6 +109,42 @@
     (ensure-directories-exist p)
     p))
 
+;;; --- attachments ----------------------------------------------------------
+
+(defun temp-file-with-bytes (bytes)
+  (let ((path (uiop:tmpize-pathname
+               (merge-pathnames "cliam-att.bin" (uiop:temporary-directory)))))
+    (with-open-file (s path :direction :output
+                            :element-type '(unsigned-byte 8)
+                            :if-exists :supersede)
+      (write-sequence bytes s))
+    path))
+
+(test render-attachment-multipart-mixed
+  (let* ((bytes (map '(simple-array (unsigned-byte 8) (*)) #'char-code "hello bytes"))
+         (path (temp-file-with-bytes bytes))
+         (e (attach (text-body (make-email) "see attachment")
+                    path :filename "note.txt" :content-type "text/plain"))
+         (s (render-rfc822 e)))
+    (is (search "multipart/mixed" s))
+    (is (search "Content-Disposition: attachment; filename=\"note.txt\"" s))
+    (is (search "Content-Transfer-Encoding: base64" s))
+    ;; "hello bytes" -> base64 "aGVsbG8gYnl0ZXM="
+    (is (search "aGVsbG8gYnl0ZXM=" s))
+    (uiop:delete-file-if-exists path)))
+
+(test attachment-content-type-defaulted-from-filename
+  (let* ((path (temp-file-with-bytes #(0 1 2)))
+         (e (attach (make-email) path :filename "logo.png")))
+    (is (search "Content-Type: image/png; name=\"logo.png\"" (render-rfc822 e)))
+    (uiop:delete-file-if-exists path)))
+
+(test attachment-content-type-fallback-to-octet-stream
+  (let* ((path (temp-file-with-bytes #(0 1 2)))
+         (e (attach (make-email) path :filename "weirdfile.unknownext")))
+    (is (search "application/octet-stream" (render-rfc822 e)))
+    (uiop:delete-file-if-exists path)))
+
 ;;; --- smtp adapter (constructor / arg shaping; no live send) --------------
 
 (asdf:load-system :cliam/smtp)

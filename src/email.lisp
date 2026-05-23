@@ -149,24 +149,73 @@ Display names are RFC 2047 encoded when non-ASCII."
   (loop for (k v) on (email-headers email) by #'cddr
         do (format out "~a: ~a~%" k v)))
 
+(defun %read-file-octets (path)
+  (with-open-file (s path :element-type '(unsigned-byte 8))
+    (let ((bytes (make-array (file-length s) :element-type '(unsigned-byte 8))))
+      (read-sequence bytes s)
+      bytes)))
+
+(defun %base64-wrap (s &optional (width 76))
+  "Insert a CRLF every WIDTH chars per RFC 5322 line-length recommendation."
+  (with-output-to-string (out)
+    (loop with len = (length s)
+          for start from 0 below len by width
+          do (write-string (subseq s start (min (+ start width) len)) out)
+             (write-char #\Newline out))))
+
+(defun %attachment-content-type (att)
+  (or (getf att :content-type)
+      (let ((fname (getf att :filename)))
+        (and fname (trivial-mimes:mime-lookup fname)))
+      "application/octet-stream"))
+
+(defun %write-attachment (att out boundary)
+  (let* ((path  (getf att :pathname))
+         (fname (or (getf att :filename) "attachment"))
+         (ct    (%attachment-content-type att))
+         (bytes (%read-file-octets path))
+         (b64   (cl-base64:usb8-array-to-base64-string bytes)))
+    (format out "--~a~%" boundary)
+    (format out "Content-Type: ~a; name=\"~a\"~%" ct fname)
+    (format out "Content-Disposition: attachment; filename=\"~a\"~%" fname)
+    (format out "Content-Transfer-Encoding: base64~%~%")
+    (write-string (%base64-wrap b64) out)))
+
+(defun %write-body-part (email out)
+  "Write the body section without the outer headers. Used both as the
+top-level body (no attachments) and as the first sub-part of multipart/
+mixed (with attachments)."
+  (let ((text (email-text-body email))
+        (html (email-html-body email)))
+    (cond
+      ((and text html)
+       (let ((b (%random-boundary)))
+         (format out "Content-Type: multipart/alternative; boundary=\"~a\"~%~%" b)
+         (format out "--~a~%Content-Type: text/plain; charset=utf-8~%Content-Transfer-Encoding: 8bit~%~%~a~%" b text)
+         (format out "--~a~%Content-Type: text/html; charset=utf-8~%Content-Transfer-Encoding: 8bit~%~%~a~%"  b html)
+         (format out "--~a--~%" b)))
+      (text
+       (format out "Content-Type: text/plain; charset=utf-8~%Content-Transfer-Encoding: 8bit~%~%~a~%" text))
+      (html
+       (format out "Content-Type: text/html; charset=utf-8~%Content-Transfer-Encoding: 8bit~%~%~a~%" html))
+      (t
+       (format out "Content-Type: text/plain; charset=utf-8~%~%~%")))))
+
 (defun render-rfc822 (email)
   "Serialise EMAIL into an RFC 5322 string suitable for SMTP or .eml output.
-Supports text-only, html-only, and multipart/alternative (both) bodies.
-Attachments are not yet wired through the renderer."
+Supports text-only, html-only, multipart/alternative (both bodies), and
+multipart/mixed with attachments (base64-encoded, Content-Type guessed
+from filename when not supplied)."
   (with-output-to-string (out)
     (%write-headers email out)
-    (let ((text (email-text-body email))
-          (html (email-html-body email)))
-      (cond
-        ((and text html)
-         (let ((b (%random-boundary)))
-           (format out "Content-Type: multipart/alternative; boundary=\"~a\"~%~%" b)
-           (format out "--~a~%Content-Type: text/plain; charset=utf-8~%Content-Transfer-Encoding: 8bit~%~%~a~%" b text)
-           (format out "--~a~%Content-Type: text/html; charset=utf-8~%Content-Transfer-Encoding: 8bit~%~%~a~%"  b html)
-           (format out "--~a--~%" b)))
-        (text
-         (format out "Content-Type: text/plain; charset=utf-8~%Content-Transfer-Encoding: 8bit~%~%~a~%" text))
-        (html
-         (format out "Content-Type: text/html; charset=utf-8~%Content-Transfer-Encoding: 8bit~%~%~a~%" html))
-        (t
-         (format out "Content-Type: text/plain; charset=utf-8~%~%~%"))))))
+    (cond
+      ((email-attachments email)
+       (let ((b (%random-boundary)))
+         (format out "Content-Type: multipart/mixed; boundary=\"~a\"~%~%" b)
+         (format out "--~a~%" b)
+         (%write-body-part email out)
+         (dolist (att (email-attachments email))
+           (%write-attachment att out b))
+         (format out "--~a--~%" b)))
+      (t
+       (%write-body-part email out)))))

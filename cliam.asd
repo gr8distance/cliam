@@ -3,7 +3,7 @@
   :version "0.1.0"
   :author "ug <gr8.distance@gmail.com>"
   :license "MIT"
-  :depends-on ("alexandria" "babel" "cl-base64")
+  :depends-on ("alexandria" "babel" "cl-base64" "trivial-mimes")
   :pathname "src/"
   :components ((:file "package")
                (:file "email"   :depends-on ("package"))
