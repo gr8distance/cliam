@@ -8,8 +8,9 @@
   :components ((:file "package")
                (:file "email"   :depends-on ("package"))
                (:file "adapter" :depends-on ("email"))
-               (:file "test"    :depends-on ("adapter"))
-               (:file "local"   :depends-on ("adapter")))
+               (:file "test"       :depends-on ("adapter"))
+               (:file "local"      :depends-on ("adapter"))
+               (:file "assertions" :depends-on ("test")))
   :in-order-to ((test-op (test-op "cliam/tests"))))
 
 (defsystem "cliam/smtp"

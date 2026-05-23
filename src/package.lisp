@@ -20,6 +20,9 @@
    ;; test adapter
    #:test-adapter #:make-test-adapter
    #:test-inbox #:clear-inbox
+   ;; test assertions (framework-agnostic)
+   #:email-matches-p #:find-email
+   #:assert-email-sent #:assert-no-emails-sent #:assert-email-count
    ;; local adapter
    #:local-adapter #:make-local-adapter
    #:local-adapter-directory

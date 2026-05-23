@@ -109,6 +109,49 @@
     (ensure-directories-exist p)
     p))
 
+;;; --- assertions -----------------------------------------------------------
+
+(defun seed-inbox ()
+  (let* ((a (make-test-adapter))
+         (*default-adapter* a))
+    (deliver (subject (to (from (make-email) "noreply@x.com") "alice@x.com" "Alice")
+                      "Welcome"))
+    (deliver (subject (text-body (to (from (make-email) "noreply@x.com") "bob@x.com")
+                                 "click here please")
+                      "Reset your password"))
+    a))
+
+(test find-email-by-subject
+  (let* ((a (seed-inbox))
+         (e (find-email a :subject "Welcome")))
+    (is (not (null e)))
+    (is (equal "Welcome" (email-subject e)))))
+
+(test find-email-by-recipient-and-substring
+  (let ((a (seed-inbox)))
+    (is (find-email a :to "bob@x.com" :subject-contains "Reset"))
+    (is (find-email a :body-contains "click here"))))
+
+(test assert-email-sent-returns-match
+  (let ((a (seed-inbox)))
+    (is (equal "Welcome"
+               (email-subject (assert-email-sent a :to "alice@x.com"))))))
+
+(test assert-email-sent-signals-on-miss
+  (let ((a (make-test-adapter)))
+    (signals error (assert-email-sent a :subject "anything"))))
+
+(test assert-no-emails-sent
+  (let ((a (make-test-adapter)))
+    (assert-no-emails-sent a)
+    (push (subject (make-email) "boom") (test-inbox a))
+    (signals error (assert-no-emails-sent a))))
+
+(test assert-email-count
+  (let ((a (seed-inbox)))
+    (assert-email-count a 2)
+    (signals error (assert-email-count a 99))))
+
 ;;; --- attachments ----------------------------------------------------------
 
 (defun temp-file-with-bytes (bytes)
