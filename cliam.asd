@@ -20,6 +20,13 @@
   :pathname "src/"
   :components ((:file "smtp")))
 
+(defsystem "cliam/ses"
+  :description "AWS SES SMTP preset for cliam (opt-in; wraps cliam/smtp)."
+  :version "0.1.0"
+  :depends-on ("cliam/smtp")
+  :pathname "src/"
+  :components ((:file "ses")))
+
 (defsystem "cliam/tests"
   :depends-on ("cliam" "fiveam")
   :pathname "tests/"

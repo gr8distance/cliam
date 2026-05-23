@@ -212,6 +212,28 @@
     (signals deliver-error
       (deliver (subject (make-email) "no from") :adapter a))))
 
+(asdf:load-system :cliam/ses)
+
+(test ses-preset-builds-correct-endpoint
+  (let ((a (make-ses-smtp-adapter :region "ap-northeast-1"
+                                  :smtp-username "AKIA-fake"
+                                  :smtp-password "fake-secret")))
+    (is (equal "email-smtp.ap-northeast-1.amazonaws.com" (smtp-adapter-host a)))
+    (is (= 587 (smtp-adapter-port a)))
+    (is (eq :starttls (smtp-adapter-ssl a)))
+    (is (equal "AKIA-fake" (smtp-adapter-username a)))))
+
+(test ses-preset-defaults-region-and-tls
+  (let ((a (make-ses-smtp-adapter :smtp-username "u" :smtp-password "p")))
+    (is (search "us-east-1" (smtp-adapter-host a)))
+    (is (eq :starttls (smtp-adapter-ssl a)))))
+
+(test ses-preset-allows-tls-on-465
+  (let ((a (make-ses-smtp-adapter :smtp-username "u" :smtp-password "p"
+                                  :port 465 :ssl :tls)))
+    (is (= 465 (smtp-adapter-port a)))
+    (is (eq :tls (smtp-adapter-ssl a)))))
+
 (test addr-helpers
   (is (equal "x@y.com" (cliam::%addr-bare "x@y.com")))
   (is (equal "x@y.com" (cliam::%addr-bare '("Alice" . "x@y.com"))))

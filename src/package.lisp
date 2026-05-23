@@ -29,4 +29,6 @@
    ;; smtp adapter (opt-in via :cliam/smtp)
    #:smtp-adapter #:make-smtp-adapter
    #:smtp-adapter-host #:smtp-adapter-port #:smtp-adapter-ssl
-   #:smtp-adapter-username #:smtp-adapter-password))
+   #:smtp-adapter-username #:smtp-adapter-password
+   ;; SES preset (opt-in via :cliam/ses)
+   #:make-ses-smtp-adapter #:*ses-regions*))
