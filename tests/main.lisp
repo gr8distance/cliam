@@ -71,6 +71,32 @@
     (is (search "Subject: Hello" s))
     (is (null (search "=?UTF-8?B?" s)))))
 
+(test render-includes-message-id
+  (let ((s (render-rfc822 (from (make-email) "alice@example.com"))))
+    (is (search "Message-ID: <" s))
+    (is (search "@example.com>" s))))
+
+(test render-folds-long-recipient-list
+  (let* ((e (reduce (lambda (e i)
+                      (to e (format nil "user~3,'0d@example.com" i)))
+                    (alexandria:iota 30)
+                    :initial-value (from (make-email) "noreply@example.com")))
+         (s (render-rfc822 e)))
+    ;; folded lines start with a leading space (RFC 5322 §2.2.3)
+    (is (search (format nil "~% ") s))
+    ;; no individual line should exceed 998 chars (hard max), most should
+    ;; stay under 78
+    (let ((to-line (subseq s (search "To: " s)
+                           (search (string #\Newline) s :start2 (search "To: " s)))))
+      (is (< (length to-line) 78)))))
+
+(test render-folds-long-subject
+  (let* ((subj "this is a deliberately long subject line that should be folded by the renderer because it exceeds seventy-eight characters easily")
+         (s (render-rfc822 (subject (make-email) subj))))
+    (is (search (format nil "Subject: ") s))
+    ;; folded -> there's a newline somewhere mid-subject
+    (is (search (format nil "~% ") s))))
+
 (test render-body-declares-8bit-transfer-encoding
   (let ((s (render-rfc822 (text-body (make-email) "anything"))))
     (is (search "Content-Transfer-Encoding: 8bit" s))))

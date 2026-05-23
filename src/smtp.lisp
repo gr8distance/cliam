@@ -33,31 +33,31 @@
   (when (consp addr) (car addr)))
 
 (defmethod deliver-with ((a smtp-adapter) email)
-  (let* ((from        (or (email-from email)
-                          (error 'deliver-error :email email :adapter a
-                                                :cause "email has no FROM address")))
-         (from-bare   (%addr-bare from))
-         (auth        (when (smtp-adapter-username a)
-                        (list (smtp-adapter-username a)
-                              (smtp-adapter-password a)))))
+  ;; Render the entire RFC 5322 message ourselves and hand it to cl-smtp
+  ;; as a stream — that way display names on To/Cc, attachments, and
+  ;; multipart layout produced by render-rfc822 all reach the wire as-is,
+  ;; instead of getting clobbered by cl-smtp's own header generator.
+  (let* ((from       (or (email-from email)
+                         (error 'deliver-error :email email :adapter a
+                                               :cause "email has no FROM address")))
+         (envelope   (%addr-bare from))
+         (recipients (mapcar #'%addr-bare
+                             (append (email-to email)
+                                     (email-cc email)
+                                     (email-bcc email))))
+         (auth       (when (smtp-adapter-username a)
+                       (list (smtp-adapter-username a)
+                             (smtp-adapter-password a)))))
     (handler-case
-        (cl-smtp:send-email
-         (smtp-adapter-host a)
-         from-bare
-         (mapcar #'%addr-bare (email-to email))
-         (email-subject email)
-         (or (email-text-body email) "")
-         :port          (or (smtp-adapter-port a)
-                            (if (eq (smtp-adapter-ssl a) :tls) 465 25))
-         :ssl           (smtp-adapter-ssl a)
-         :cc            (mapcar #'%addr-bare (email-cc email))
-         :bcc           (mapcar #'%addr-bare (email-bcc email))
-         :reply-to      (when (email-reply-to email) (%addr-bare (email-reply-to email)))
-         :extra-headers (loop for (k v) on (email-headers email) by #'cddr
-                              collect (list k v))
-         :html-message  (email-html-body email)
-         :display-name  (%addr-name from)
-         :authentication auth)
+        (cl-smtp:with-smtp-mail (stream
+                                 (smtp-adapter-host a)
+                                 envelope
+                                 recipients
+                                 :port (or (smtp-adapter-port a)
+                                           (if (eq (smtp-adapter-ssl a) :tls) 465 25))
+                                 :ssl  (smtp-adapter-ssl a)
+                                 :authentication auth)
+          (write-sequence (render-rfc822 email) stream))
       (error (e)
         (error 'deliver-error :email email :adapter a :cause e)))
     (assign email :delivered-via :smtp)))

@@ -138,16 +138,77 @@ Display names are RFC 2047 encoded when non-ASCII."
 (defun %random-boundary ()
   (format nil "----=_Boundary_~16,'0X" (random (ash 1 64))))
 
+(defun %generate-message-id (from-addr)
+  "Build a Message-ID that's likely unique. Uses the domain of FROM-ADDR
+when present, falls back to a placeholder for headerless tests."
+  (let* ((at (and from-addr (position #\@ from-addr)))
+         (domain (if at (subseq from-addr (1+ at)) "cliam.local")))
+    (format nil "<~16,'0X.~16,'0X@~a>"
+            (get-universal-time) (random (ash 1 64)) domain)))
+
+(defun %split-foldable (s)
+  "Split S at single-space boundaries, keeping the trailing space on each
+chunk. \"a, b\" -> (\"a, \" \"b\"). Lets the folder break recipient lists
+right after \", \" while preserving normal whitespace folding too."
+  (loop with len = (length s)
+        with start = 0
+        for i from 0 below len
+        when (char= (char s i) #\Space)
+          collect (subseq s start (1+ i)) into out
+          and do (setf start (1+ i))
+        finally (return (if (< start len)
+                            (append out (list (subseq s start)))
+                            out))))
+
+(defun %fold-header-line (name value &optional (limit 78))
+  "Format \"Name: value\\n\" with RFC 5322 §2.2.3 line folding. Folds at
+whitespace (preferring the implicit \", \" boundaries of recipient lists)
+when the line would exceed LIMIT chars. Continuation lines start with a
+single space."
+  (let* ((prefix (format nil "~a: " name))
+         (full   (concatenate 'string prefix value)))
+    (if (<= (length full) limit)
+        (concatenate 'string full (string #\Newline))
+        (with-output-to-string (out)
+          (write-string prefix out)
+          (let ((col (length prefix)))
+            (dolist (tok (%split-foldable value))
+              (cond
+                ((<= (+ col (length tok)) limit)
+                 (write-string tok out)
+                 (incf col (length tok)))
+                ((= col (length prefix))
+                 ;; nothing yet on this fresh line, must write even if too long
+                 (write-string tok out)
+                 (incf col (length tok)))
+                (t
+                 (write-char #\Newline out)
+                 (write-char #\Space   out)
+                 (let ((trimmed (string-left-trim " " tok)))
+                   (write-string trimmed out)
+                   (setf col (1+ (length trimmed))))))))
+          (write-char #\Newline out)))))
+
 (defun %write-headers (email out)
-  (format out "From: ~a~%" (%format-addr (or (email-from email) "")))
-  (when (email-to email)       (format out "To: ~a~%"       (%format-addr-list (email-to email))))
-  (when (email-cc email)       (format out "Cc: ~a~%"       (%format-addr-list (email-cc email))))
-  (when (email-reply-to email) (format out "Reply-To: ~a~%" (%format-addr (email-reply-to email))))
-  (format out "Subject: ~a~%" (%encode-rfc2047 (email-subject email)))
-  (format out "Date: ~a~%" (%now-rfc822))
-  (format out "MIME-Version: 1.0~%")
+  (let ((from-addr (and (email-from email) (%addr-bare-string (email-from email)))))
+    (write-string (%fold-header-line "From"     (%format-addr (or (email-from email) ""))) out)
+    (when (email-to email)
+      (write-string (%fold-header-line "To"       (%format-addr-list (email-to email))) out))
+    (when (email-cc email)
+      (write-string (%fold-header-line "Cc"       (%format-addr-list (email-cc email))) out))
+    (when (email-reply-to email)
+      (write-string (%fold-header-line "Reply-To" (%format-addr (email-reply-to email))) out))
+    (write-string (%fold-header-line "Subject"   (%encode-rfc2047 (email-subject email))) out)
+    (format out "Date: ~a~%" (%now-rfc822))
+    (format out "Message-ID: ~a~%" (%generate-message-id from-addr))
+    (format out "MIME-Version: 1.0~%"))
   (loop for (k v) on (email-headers email) by #'cddr
-        do (format out "~a: ~a~%" k v)))
+        do (write-string (%fold-header-line k v) out)))
+
+(defun %addr-bare-string (addr)
+  (etypecase addr
+    (string addr)
+    (cons   (cdr addr))))
 
 (defun %read-file-octets (path)
   (with-open-file (s path :element-type '(unsigned-byte 8))
