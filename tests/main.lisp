@@ -52,6 +52,29 @@
     (is (search "Content-Type: text/html; charset=utf-8" s))
     (is (search "<h1>hi</h1>" s))))
 
+(test render-utf8-subject-encoded-rfc2047
+  (let* ((e (subject (make-email) "ようこそ"))
+         (s (render-rfc822 e)))
+    (is (search "Subject: =?UTF-8?B?" s))
+    ;; raw Japanese must not appear in the headers
+    (is (null (search "ようこそ" s)))))
+
+(test render-utf8-display-name-encoded
+  (let* ((e (from (make-email) "alice@x.com" "山田太郎"))
+         (s (render-rfc822 e)))
+    (is (search "=?UTF-8?B?" s))
+    (is (search "<alice@x.com>" s))
+    (is (null (search "山田太郎" s)))))
+
+(test render-ascii-subject-passes-through
+  (let ((s (render-rfc822 (subject (make-email) "Hello"))))
+    (is (search "Subject: Hello" s))
+    (is (null (search "=?UTF-8?B?" s)))))
+
+(test render-body-declares-8bit-transfer-encoding
+  (let ((s (render-rfc822 (text-body (make-email) "anything"))))
+    (is (search "Content-Transfer-Encoding: 8bit" s))))
+
 (test render-multipart-when-both-bodies
   (let* ((e (html-body (text-body (make-email) "plain") "<p>rich</p>"))
          (s (render-rfc822 e)))

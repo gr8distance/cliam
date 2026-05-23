@@ -95,11 +95,26 @@
 
 ;;; --- RFC 5322 rendering ---------------------------------------------------
 
+(defun %ascii-only-p (s)
+  (and (stringp s) (every (lambda (c) (< (char-code c) 128)) s)))
+
+(defun %encode-rfc2047 (s)
+  "If S contains any non-ASCII characters, wrap it in an RFC 2047
+encoded-word (UTF-8 base64). Otherwise return S unchanged. Used for
+Subject and display names — without this, Japanese (and any non-ASCII)
+headers arrive as mojibake or get rejected outright."
+  (if (or (null s) (%ascii-only-p s))
+      s
+      (let* ((bytes (babel:string-to-octets s :encoding :utf-8))
+             (b64   (cl-base64:usb8-array-to-base64-string bytes)))
+        (format nil "=?UTF-8?B?~a?=" b64))))
+
 (defun %format-addr (addr)
-  "Render an address: a (name . addr) cons or a bare addr string."
+  "Render an address: a (name . addr) cons or a bare addr string.
+Display names are RFC 2047 encoded when non-ASCII."
   (etypecase addr
     (string addr)
-    (cons   (format nil "~a <~a>" (car addr) (cdr addr)))))
+    (cons   (format nil "~a <~a>" (%encode-rfc2047 (car addr)) (cdr addr)))))
 
 (defun %format-addr-list (addrs)
   (format nil "~{~a~^, ~}" (mapcar #'%format-addr addrs)))
@@ -128,7 +143,7 @@
   (when (email-to email)       (format out "To: ~a~%"       (%format-addr-list (email-to email))))
   (when (email-cc email)       (format out "Cc: ~a~%"       (%format-addr-list (email-cc email))))
   (when (email-reply-to email) (format out "Reply-To: ~a~%" (%format-addr (email-reply-to email))))
-  (format out "Subject: ~a~%" (email-subject email))
+  (format out "Subject: ~a~%" (%encode-rfc2047 (email-subject email)))
   (format out "Date: ~a~%" (%now-rfc822))
   (format out "MIME-Version: 1.0~%")
   (loop for (k v) on (email-headers email) by #'cddr
@@ -146,12 +161,12 @@ Attachments are not yet wired through the renderer."
         ((and text html)
          (let ((b (%random-boundary)))
            (format out "Content-Type: multipart/alternative; boundary=\"~a\"~%~%" b)
-           (format out "--~a~%Content-Type: text/plain; charset=utf-8~%~%~a~%" b text)
-           (format out "--~a~%Content-Type: text/html; charset=utf-8~%~%~a~%"  b html)
+           (format out "--~a~%Content-Type: text/plain; charset=utf-8~%Content-Transfer-Encoding: 8bit~%~%~a~%" b text)
+           (format out "--~a~%Content-Type: text/html; charset=utf-8~%Content-Transfer-Encoding: 8bit~%~%~a~%"  b html)
            (format out "--~a--~%" b)))
         (text
-         (format out "Content-Type: text/plain; charset=utf-8~%~%~a~%" text))
+         (format out "Content-Type: text/plain; charset=utf-8~%Content-Transfer-Encoding: 8bit~%~%~a~%" text))
         (html
-         (format out "Content-Type: text/html; charset=utf-8~%~%~a~%" html))
+         (format out "Content-Type: text/html; charset=utf-8~%Content-Transfer-Encoding: 8bit~%~%~a~%" html))
         (t
          (format out "Content-Type: text/plain; charset=utf-8~%~%~%"))))))
