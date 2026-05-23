@@ -14,8 +14,9 @@
    ;; rendering
    #:render-rfc822
    ;; adapter protocol + delivery
-   #:deliver #:deliver-with
-   #:*default-adapter*
+   #:deliver #:deliver-with #:deliver-async
+   #:*default-adapter* #:*telemetry*
+   #:validate-email
    #:deliver-error
    ;; test adapter
    #:test-adapter #:make-test-adapter

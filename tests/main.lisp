@@ -88,7 +88,7 @@
   (let* ((adapter (make-test-adapter))
          (*default-adapter* adapter))
     (deliver (subject (from (to (make-email) "b@x.com") "a@x.com") "first"))
-    (deliver (subject (make-email) "second"))
+    (deliver (subject (from (to (make-email) "b@x.com") "a@x.com") "second"))
     (is (= 2 (length (test-inbox adapter))))
     ;; newest first
     (is (equal "second" (email-subject (first  (test-inbox adapter)))))
@@ -99,6 +99,68 @@
 (test deliver-without-adapter-signals
   (let ((*default-adapter* nil))
     (signals error (deliver (make-email)))))
+
+(test validate-email-requires-from
+  (signals error (validate-email (to (make-email) "x@y.com")))
+  (signals error (validate-email (from (make-email) "a@x.com")))   ; no recipient
+  (let ((e (to (from (make-email) "a@x.com") "b@x.com")))
+    (is (eq e (validate-email e)))))
+
+(test deliver-runs-validation-by-default
+  (let* ((a (make-test-adapter))
+         (*default-adapter* a))
+    (signals error (deliver (make-email)))
+    ;; opting out
+    (deliver (make-email) :validate nil)
+    (is (= 1 (length (test-inbox a))))))
+
+(test telemetry-fires-around-deliver
+  (let* ((a (make-test-adapter))
+         (events nil)
+         (*default-adapter* a)
+         (*telemetry* (lambda (event payload)
+                        (declare (ignore payload))
+                        (push event events))))
+    (deliver (to (from (make-email) "a@x.com") "b@x.com"))
+    (is (equal '(:after-deliver :before-deliver) events))))
+
+(test telemetry-fires-on-failure
+  (let* ((events nil)
+         (*telemetry* (lambda (event payload)
+                        (declare (ignore payload))
+                        (push event events)))
+         (boom (make-instance 'test-adapter)))
+    ;; override deliver-with to always fail
+    (defmethod deliver-with ((a (eql boom)) email)
+      (declare (ignore email))
+      (error "boom"))
+    (signals error (deliver (to (from (make-email) "a@x.com") "b@x.com")
+                            :adapter boom))
+    (is (member :deliver-failed events))
+    (is (member :before-deliver events))
+    (is (not (member :after-deliver events)))))
+
+(test deliver-async-runs-in-thread-and-completes
+  (let* ((a (make-test-adapter))
+         (*default-adapter* a)
+         (thread (deliver-async
+                  (to (from (make-email) "a@x.com") "b@x.com"))))
+    (bordeaux-threads:join-thread thread)
+    (is (= 1 (length (test-inbox a))))))
+
+(test deliver-async-invokes-on-error
+  (let* ((captured nil)
+         (boom (make-instance 'test-adapter)))
+    (defmethod deliver-with ((a (eql boom)) email)
+      (declare (ignore email))
+      (error "boom"))
+    (let ((thread (deliver-async
+                   (to (from (make-email) "a@x.com") "b@x.com")
+                   :adapter boom
+                   :on-error (lambda (e) (setf captured e)))))
+      (bordeaux-threads:join-thread thread)
+      (is (not (null captured)))
+      (is (search "boom" (format nil "~a" captured))))))
 
 ;;; --- local adapter --------------------------------------------------------
 
@@ -208,8 +270,10 @@
     (is (= 587 (smtp-adapter-port a)))))
 
 (test smtp-deliver-without-from-signals
+  ;; Pre-deliver validation catches missing FROM before the SMTP adapter
+  ;; would; the test still verifies "no FROM is reported as an error".
   (let ((a (make-smtp-adapter :host "h")))
-    (signals deliver-error
+    (signals error
       (deliver (subject (make-email) "no from") :adapter a))))
 
 (asdf:load-system :cliam/ses)
