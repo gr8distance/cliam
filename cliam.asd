@@ -1,6 +1,6 @@
 (defsystem "cliam"
   :description "A tiny composable mailer for Common Lisp, in the spirit of Swoosh."
-  :version "0.2.0"
+  :version "0.2.1"
   :author "ug <gr8.distance@gmail.com>"
   :license "MIT"
   :depends-on ("alexandria" "babel" "cl-base64" "trivial-mimes" "bordeaux-threads")

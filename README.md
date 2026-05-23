@@ -143,10 +143,36 @@ Top-level entry: `(deliver email :adapter ...)` or bind
 - attachments via `multipart/mixed` (base64-encoded, Content-Type
   guessed from filename via `trivial-mimes`, falls back to
   `application/octet-stream`)
+- attachments from either a pathname or an in-memory octet vector
 - RFC 2047 encoded-word for non-ASCII subjects and display names
   (Japanese et al.) — base64 + UTF-8
 - `Content-Transfer-Encoding: 8bit` on body parts so strict MTAs
   accept the UTF-8 payload as-is
+- RFC 5322 §2.2.3 header folding at 78 chars (long subjects,
+  recipient lists)
+- auto-generated `Message-ID` so MTAs don't downrank or refuse the
+  message
+- display names on To/Cc/Bcc preserved on the wire (SMTP adapter
+  hands cliam-rendered headers to the MTA rather than letting
+  `cl-smtp` rewrite them)
+
+### Building emails
+
+Chain builders, or use the one-call constructor:
+
+```lisp
+;; chained
+(-> (make-email)
+    (from "noreply@example.com")
+    (to   "alice@example.com" "Alice")
+    (subject "Hi"))
+
+;; one-call
+(build-email :from "noreply@example.com"
+             :to (list "alice@example.com" '("Bob" . "bob@example.com"))
+             :subject "Hi"
+             :text-body "...")
+```
 
 ### Delivery
 
@@ -165,20 +191,34 @@ Bind `*telemetry*` to a `(lambda (event payload) ...)` to observe
 ### Test assertions
 
 Framework-agnostic helpers that signal on miss (fiveam / rove /
-parachute all report failures naturally):
+parachute all report failures naturally). `with-fresh-inbox` gives
+per-test isolation without coupling to any framework's fixture
+machinery:
 
 ```lisp
-(let ((adapter (make-test-adapter)))
-  (let ((*default-adapter* adapter))
-    (send-welcome-mail "alice@example.com")
-    (assert-email-sent adapter
-                       :to "alice@example.com"
-                       :subject-contains "Welcome")
-    (assert-email-count adapter 1)))
+(with-fresh-inbox (adapter)
+  (send-welcome-mail "alice@example.com")
+  (assert-email-sent adapter
+                     :to "alice@example.com"
+                     :subject-contains "Welcome")
+  (assert-email-count adapter 1))
 ```
 
 Also: `find-email`, `email-matches-p`, `assert-no-emails-sent`,
 `clear-inbox`.
+
+### Local mailbox inspection
+
+The local adapter writes one `.eml` per delivery; helpers let you
+inspect or drain that directory programmatically:
+
+```lisp
+(list-mailbox adapter)            ; -> list of pathnames, oldest first
+(read-mailbox-entry path)         ; -> string contents
+(pop-mailbox adapter)             ; -> oldest entry as string, deletes it
+(delete-mailbox-entry path)
+(clear-mailbox adapter)           ; -> count of deleted entries
+```
 
 ## What cliam intentionally does NOT do (yet)
 
@@ -186,9 +226,7 @@ Also: `find-email`, `email-matches-p`, `assert-no-emails-sent`,
 |---|---|
 | HTTP API providers (SendGrid / Mailgun / Postmark / Resend / Brevo / ...) | the adapter protocol is open — write your own and `defmethod deliver-with`; one per ~50 LOC |
 | AWS SES via the SES HTTP API (SigV4) | use `cliam/ses` (SMTP) for now; HTTP API adapter is planned |
-| Display names on recipient (To/Cc/Bcc) addresses over SMTP | passed as bare addresses for now — only From carries display-name through `cl-smtp` |
 | Inline images (`multipart/related` + `Content-ID`) | not yet — multipart/mixed attachments work |
-| Long-header folding (RFC 5322 §2.2.3) | not yet — risky for very long Subject or To: lists |
 | `quoted-printable` body encoding | not needed for modern MTAs; bodies use `8bit` |
 | DKIM signing | offload to your sending service (SES / SendGrid / etc.) — they sign for you |
 | Bulk delivery + retry | not yet — call `deliver` in a loop, plug into your job queue |
