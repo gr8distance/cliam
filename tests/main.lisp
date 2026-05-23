@@ -86,6 +86,36 @@
     (ensure-directories-exist p)
     p))
 
+;;; --- smtp adapter (constructor / arg shaping; no live send) --------------
+
+(asdf:load-system :cliam/smtp)
+
+(test smtp-adapter-fields-default
+  (let ((a (make-smtp-adapter :host "smtp.example.com")))
+    (is (equal "smtp.example.com" (smtp-adapter-host a)))
+    (is (null (smtp-adapter-port a)))
+    (is (null (smtp-adapter-ssl  a)))
+    (is (null (smtp-adapter-username a)))))
+
+(test smtp-adapter-stores-credentials
+  (let ((a (make-smtp-adapter :host "h" :port 587 :ssl :starttls
+                              :username "u" :password "p")))
+    (is (eq :starttls (smtp-adapter-ssl a)))
+    (is (equal "u" (smtp-adapter-username a)))
+    (is (equal "p" (smtp-adapter-password a)))
+    (is (= 587 (smtp-adapter-port a)))))
+
+(test smtp-deliver-without-from-signals
+  (let ((a (make-smtp-adapter :host "h")))
+    (signals deliver-error
+      (deliver (subject (make-email) "no from") :adapter a))))
+
+(test addr-helpers
+  (is (equal "x@y.com" (cliam::%addr-bare "x@y.com")))
+  (is (equal "x@y.com" (cliam::%addr-bare '("Alice" . "x@y.com"))))
+  (is (null (cliam::%addr-name "x@y.com")))
+  (is (equal "Alice" (cliam::%addr-name '("Alice" . "x@y.com")))))
+
 (test local-adapter-writes-eml-file
   (let* ((dir (temp-dir))
          (adapter (make-local-adapter dir))

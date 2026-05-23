@@ -22,4 +22,8 @@
    #:test-inbox #:clear-inbox
    ;; local adapter
    #:local-adapter #:make-local-adapter
-   #:local-adapter-directory))
+   #:local-adapter-directory
+   ;; smtp adapter (opt-in via :cliam/smtp)
+   #:smtp-adapter #:make-smtp-adapter
+   #:smtp-adapter-host #:smtp-adapter-port #:smtp-adapter-ssl
+   #:smtp-adapter-username #:smtp-adapter-password))

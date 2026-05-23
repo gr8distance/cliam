@@ -93,10 +93,28 @@ An adapter is anything with a `deliver-with` method:
 
 Built-in:
 
-| adapter | use |
-|---|---|
-| `test-adapter`  | tests — captures deliveries in memory (`test-inbox`) |
-| `local-adapter` | development — writes `.eml` files to a directory |
+| adapter | use | system |
+|---|---|---|
+| `test-adapter`  | tests — captures deliveries in memory (`test-inbox`) | `cliam` (core) |
+| `local-adapter` | development — writes `.eml` files to a directory | `cliam` (core) |
+| `smtp-adapter`  | production — sends via SMTP using `cl-smtp` | `cliam/smtp` (opt-in) |
+
+```lisp
+(ql:quickload :cliam/smtp)
+
+(defparameter *mailer*
+  (make-smtp-adapter :host "smtp.example.com"
+                     :port 587
+                     :ssl :starttls
+                     :username "noreply@example.com"
+                     :password (uiop:getenv "SMTP_PASSWORD")))
+
+(deliver email :adapter *mailer*)
+```
+
+Display names on the From address are passed to `cl-smtp` as
+`:display-name`; recipient names on To/Cc/Bcc are currently stripped
+(envelope addresses only).
 
 Top-level entry: `(deliver email :adapter ...)` or bind
 `*default-adapter*` per environment.
@@ -111,7 +129,7 @@ SMTP adapter will use this when it lands.
 
 | not in cliam (yet) | use this instead |
 |---|---|
-| Actual SMTP delivery | `cl-smtp` directly (a `cliam/smtp` adapter is planned) |
+| Display names on recipient (To/Cc/Bcc) addresses over SMTP | passed as bare addresses for now — only From carries display-name through `cl-smtp` |
 | Attachments on the wire | `local` adapter accepts attachments in the struct but doesn't render them yet |
 | HTTP API providers (SendGrid / Mailgun / etc.) | the adapter protocol is open — write your own and `defmethod deliver-with` |
 | Template rendering | bring your own (`spinneret`, `djula`, `cl-who`, etc.) — pass the result to `text-body` / `html-body` |

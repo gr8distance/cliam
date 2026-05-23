@@ -12,6 +12,13 @@
                (:file "local"   :depends-on ("adapter")))
   :in-order-to ((test-op (test-op "cliam/tests"))))
 
+(defsystem "cliam/smtp"
+  :description "SMTP adapter for cliam (opt-in; pulls cl-smtp + transitive TLS deps)."
+  :version "0.1.0"
+  :depends-on ("cliam" "cl-smtp")
+  :pathname "src/"
+  :components ((:file "smtp")))
+
 (defsystem "cliam/tests"
   :depends-on ("cliam" "fiveam")
   :pathname "tests/"
